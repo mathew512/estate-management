@@ -37,11 +37,17 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
 
+                // Safaricom calls this without a JWT; the secret in the URL protects it
+                .requestMatchers(HttpMethod.POST, "/api/v1/payments/mpesa/callback/**").permitAll()
+
                 // Only admins can create user accounts
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/register").hasRole("ADMIN")
 
                 // Billing job triggers: admin only
                 .requestMatchers("/api/v1/billing/**").hasRole("ADMIN")
+
+                // Payments: finance staff
+                .requestMatchers("/api/v1/payments/**").hasAnyRole("ADMIN", "ACCOUNTANT")
 
                 // Meter readings: field staff can record them
                 .requestMatchers(HttpMethod.POST, "/api/v1/meter-readings")
