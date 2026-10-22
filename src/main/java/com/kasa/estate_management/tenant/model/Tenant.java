@@ -1,5 +1,6 @@
 package com.kasa.estate_management.tenant.model;
 
+import com.kasa.estate_management.auth.model.User;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.Instant;
@@ -32,6 +33,10 @@ public class Tenant {
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean active = true;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", unique = true)
+    private User user;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

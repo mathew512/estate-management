@@ -1,5 +1,6 @@
 package com.kasa.estate_management.tenant.controller;
 
+import com.kasa.estate_management.tenant.dto.TenantDtos.CreateTenantLoginRequest;
 import com.kasa.estate_management.tenant.dto.TenantDtos.OnboardTenantRequest;
 import com.kasa.estate_management.tenant.dto.TenantDtos.TenantResponse;
 import com.kasa.estate_management.tenant.model.Tenant;
@@ -28,8 +29,15 @@ public class TenantController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(tenant));
     }
 
+    @PostMapping("/{id}/login-account")
+    public ResponseEntity<TenantResponse> createLoginAccount(@PathVariable("id") UUID id,
+                                                             @Valid @RequestBody CreateTenantLoginRequest request) {
+        Tenant tenant = tenantService.createLoginAccount(id, request.email(), request.password());
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(tenant));
+    }
+
     @GetMapping("/{id}")
-    public TenantResponse getById(@PathVariable UUID id) {
+    public TenantResponse getById(@PathVariable("id") UUID id) {
         return toResponse(tenantService.getById(id));
     }
 

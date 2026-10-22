@@ -55,6 +55,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/complaints/**")
                     .hasAnyRole("ADMIN", "PROPERTY_MANAGER", "CARETAKER")
 
+                // Tenant self-service: tenants only ever see their own data
+                .requestMatchers("/api/v1/me/**").hasRole("TENANT")
+
                 // Meter readings: field staff can record them
                 .requestMatchers(HttpMethod.POST, "/api/v1/meter-readings")
                     .hasAnyRole("ADMIN", "PROPERTY_MANAGER", "CARETAKER")
