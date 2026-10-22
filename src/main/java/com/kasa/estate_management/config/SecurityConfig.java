@@ -49,6 +49,12 @@ public class SecurityConfig {
                 // Payments: finance staff
                 .requestMatchers("/api/v1/payments/**").hasAnyRole("ADMIN", "ACCOUNTANT")
 
+                // Complaints: only managers assign; admins, managers and caretakers work them
+                .requestMatchers(HttpMethod.PATCH, "/api/v1/complaints/*/assign")
+                    .hasAnyRole("ADMIN", "PROPERTY_MANAGER")
+                .requestMatchers("/api/v1/complaints/**")
+                    .hasAnyRole("ADMIN", "PROPERTY_MANAGER", "CARETAKER")
+
                 // Meter readings: field staff can record them
                 .requestMatchers(HttpMethod.POST, "/api/v1/meter-readings")
                     .hasAnyRole("ADMIN", "PROPERTY_MANAGER", "CARETAKER")
