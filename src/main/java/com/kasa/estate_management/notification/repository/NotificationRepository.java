@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,4 +40,17 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
                        @Param("status") String status,
                        @Param("lastError") String lastError,
                        @Param("dedupeKey") String dedupeKey);
+
+    /**
+     * Locks up to {@code batch} due PENDING rows. Rows already locked by another instance are
+     * skipped, so two app instances never claim the same message. Must run inside a transaction.
+     */
+    @Query(value = """
+        SELECT * FROM notifications
+        WHERE status = 'PENDING' AND next_attempt_at <= :now
+        ORDER BY next_attempt_at
+        LIMIT :batch
+        FOR UPDATE SKIP LOCKED
+        """, nativeQuery = true)
+    List<Notification> claimDue(@Param("now") Instant now, @Param("batch") int batch);
 }
