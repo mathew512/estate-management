@@ -8,6 +8,7 @@ import com.kasa.estate_management.maintenance.model.ComplaintCategory;
 import com.kasa.estate_management.maintenance.model.ComplaintPriority;
 import com.kasa.estate_management.maintenance.model.ComplaintStatus;
 import com.kasa.estate_management.maintenance.repository.ComplaintRepository;
+import com.kasa.estate_management.notification.service.TenantNotifier;
 import com.kasa.estate_management.property.model.Unit;
 import com.kasa.estate_management.property.repository.UnitRepository;
 import com.kasa.estate_management.tenant.model.Lease;
@@ -43,17 +44,20 @@ public class ComplaintService {
     private final LeaseRepository leaseRepository;
     private final TenantService tenantService;
     private final UserRepository userRepository;
+    private final TenantNotifier tenantNotifier;
 
     public ComplaintService(ComplaintRepository complaintRepository,
                             UnitRepository unitRepository,
                             LeaseRepository leaseRepository,
                             TenantService tenantService,
-                            UserRepository userRepository) {
+                            UserRepository userRepository,
+                            TenantNotifier tenantNotifier) {
         this.complaintRepository = complaintRepository;
         this.unitRepository = unitRepository;
         this.leaseRepository = leaseRepository;
         this.tenantService = tenantService;
         this.userRepository = userRepository;
+        this.tenantNotifier = tenantNotifier;
     }
 
     @Transactional
@@ -87,7 +91,7 @@ public class ComplaintService {
 
     /**
      * Assigns the complaint to a staff member. A PENDING complaint moves to IN_PROGRESS
-     * as soon as someone owns it.
+     * as soon as someone owns it, and the tenant is told.
      */
     @Transactional
     public Complaint assign(UUID complaintId, UUID staffUserId) {
@@ -108,12 +112,18 @@ public class ComplaintService {
             throw new IllegalArgumentException("Complaints can only be assigned to admins, managers or caretakers");
         }
 
+        boolean startsWork = complaint.getStatus() == ComplaintStatus.PENDING;
+
         complaint.setAssignedTo(staff);
-        if (complaint.getStatus() == ComplaintStatus.PENDING) {
+        if (startsWork) {
             complaint.setStatus(ComplaintStatus.IN_PROGRESS);
         }
 
-        return complaintRepository.save(complaint);
+        Complaint saved = complaintRepository.save(complaint);
+        if (startsWork) {
+            tenantNotifier.complaintUpdated(saved, ComplaintStatus.IN_PROGRESS);
+        }
+        return saved;
     }
 
     @Transactional
@@ -161,7 +171,9 @@ public class ComplaintService {
         }
 
         complaint.setStatus(newStatus);
-        return complaintRepository.save(complaint);
+        Complaint saved = complaintRepository.save(complaint);
+        tenantNotifier.complaintUpdated(saved, newStatus);
+        return saved;
     }
 
     public Complaint getById(UUID id) {

@@ -4,6 +4,7 @@ import com.kasa.estate_management.billing.model.Invoice;
 import com.kasa.estate_management.billing.model.InvoiceStatus;
 import com.kasa.estate_management.billing.repository.InvoiceRepository;
 import com.kasa.estate_management.billing.repository.MeterReadingRepository;
+import com.kasa.estate_management.notification.service.TenantNotifier;
 import com.kasa.estate_management.tenant.model.Lease;
 import com.kasa.estate_management.tenant.model.LeaseStatus;
 import com.kasa.estate_management.tenant.repository.LeaseRepository;
@@ -21,13 +22,16 @@ public class InvoiceService {
     private final InvoiceRepository invoiceRepository;
     private final LeaseRepository leaseRepository;
     private final MeterReadingRepository meterReadingRepository;
+    private final TenantNotifier tenantNotifier;
 
     public InvoiceService(InvoiceRepository invoiceRepository,
                           LeaseRepository leaseRepository,
-                          MeterReadingRepository meterReadingRepository) {
+                          MeterReadingRepository meterReadingRepository,
+                          TenantNotifier tenantNotifier) {
         this.invoiceRepository = invoiceRepository;
         this.leaseRepository = leaseRepository;
         this.meterReadingRepository = meterReadingRepository;
+        this.tenantNotifier = tenantNotifier;
     }
 
     @Transactional
@@ -59,7 +63,9 @@ public class InvoiceService {
             .dueDate(normalizedPeriod.plusDays(4))
             .build();
 
-        return invoiceRepository.save(invoice);
+        Invoice saved = invoiceRepository.save(invoice);
+        tenantNotifier.invoiceCreated(saved);
+        return saved;
     }
 
     /**
@@ -89,7 +95,8 @@ public class InvoiceService {
     }
 
     /**
-     * Flags every unpaid or partially paid invoice whose due date has passed as OVERDUE.
+     * Flags every unpaid or partially paid invoice whose due date has passed as OVERDUE,
+     * and queues one reminder per invoice.
      */
     @Transactional
     public int markOverdueInvoices(LocalDate today) {
@@ -98,6 +105,7 @@ public class InvoiceService {
 
         late.forEach(invoice -> invoice.setStatus(InvoiceStatus.OVERDUE));
         invoiceRepository.saveAll(late);
+        late.forEach(tenantNotifier::invoiceOverdue);
 
         return late.size();
     }

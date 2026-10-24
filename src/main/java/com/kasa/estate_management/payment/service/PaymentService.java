@@ -3,6 +3,7 @@ package com.kasa.estate_management.payment.service;
 import com.kasa.estate_management.billing.model.Invoice;
 import com.kasa.estate_management.billing.model.InvoiceStatus;
 import com.kasa.estate_management.billing.repository.InvoiceRepository;
+import com.kasa.estate_management.notification.service.TenantNotifier;
 import com.kasa.estate_management.payment.mpesa.MpesaClient;
 import com.kasa.estate_management.payment.model.Payment;
 import com.kasa.estate_management.payment.model.PaymentMethod;
@@ -28,13 +29,16 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final InvoiceRepository invoiceRepository;
     private final MpesaClient mpesaClient;
+    private final TenantNotifier tenantNotifier;
 
     public PaymentService(PaymentRepository paymentRepository,
                           InvoiceRepository invoiceRepository,
-                          MpesaClient mpesaClient) {
+                          MpesaClient mpesaClient,
+                          TenantNotifier tenantNotifier) {
         this.paymentRepository = paymentRepository;
         this.invoiceRepository = invoiceRepository;
         this.mpesaClient = mpesaClient;
+        this.tenantNotifier = tenantNotifier;
     }
 
     @Transactional
@@ -57,7 +61,9 @@ public class PaymentService {
             .paidAt(Instant.now())
             .build();
 
-        return paymentRepository.save(payment);
+        Payment saved = paymentRepository.save(payment);
+        tenantNotifier.paymentReceived(saved, invoice);
+        return saved;
     }
 
     /**
@@ -152,16 +158,23 @@ public class PaymentService {
         payment.setMpesaReceiptNumber(receiptNumber);
         payment.setPaidAt(Instant.now());
 
+        boolean applied = false;
         if (amountMatches && fitsBalance) {
             applyToInvoice(invoice, payment.getAmount());
             payment.setResultDescription(truncate(resultDesc));
+            applied = true;
         } else {
             // Money was received, so we record it, but we don't touch the invoice automatically.
             log.warn("M-Pesa payment {} (receipt {}) needs manual reconciliation", payment.getId(), receiptNumber);
             payment.setResultDescription("RECEIVED BUT NOT APPLIED - needs manual reconciliation");
         }
 
-        paymentRepository.save(payment);
+        Payment saved = paymentRepository.save(payment);
+
+        // Only confirm to the tenant when the money actually reached their invoice.
+        if (applied) {
+            tenantNotifier.paymentReceived(saved, invoice);
+        }
     }
 
     public List<Payment> getByInvoice(UUID invoiceId) {
