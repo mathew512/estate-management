@@ -4,6 +4,8 @@ import com.kasa.estate_management.tenant.model.Tenant;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -12,4 +14,5 @@ public interface TenantRepository extends JpaRepository<Tenant, UUID> {
     Optional<Tenant> findByPhoneNumber(String phoneNumber);
     boolean existsByPhoneNumber(String phoneNumber);
     Optional<Tenant> findByUserId(UUID userId);
+    List<Tenant> findByPhoneNumberIn(Collection<String> phoneNumbers);
 }

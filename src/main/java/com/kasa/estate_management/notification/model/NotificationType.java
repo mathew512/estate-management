@@ -5,5 +5,6 @@ public enum NotificationType {
     INVOICE_OVERDUE,
     PAYMENT_RECEIVED,
     COMPLAINT_UPDATED,
+    PASSWORD_RESET,
     GENERAL
 }

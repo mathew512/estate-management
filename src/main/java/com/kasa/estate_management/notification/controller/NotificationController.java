@@ -54,8 +54,9 @@ public class NotificationController {
     }
 
     private NotificationResponse toResponse(Notification n) {
+        String body = (n.getType() == NotificationType.PASSWORD_RESET) ? "[hidden]" : n.getBody();
         return new NotificationResponse(
-            n.getId(), n.getChannel(), n.getRecipient(), n.getSubject(), n.getBody(),
+            n.getId(), n.getChannel(), n.getRecipient(), n.getSubject(), body,
             n.getType(), n.getStatus(), n.getAttempts(), n.getLastError(),
             n.getNextAttemptAt(), n.getSentAt(), n.getCreatedAt()
         );

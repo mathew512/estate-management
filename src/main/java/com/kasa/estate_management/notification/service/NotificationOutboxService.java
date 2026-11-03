@@ -2,6 +2,7 @@ package com.kasa.estate_management.notification.service;
 
 import com.kasa.estate_management.notification.model.Notification;
 import com.kasa.estate_management.notification.model.NotificationStatus;
+import com.kasa.estate_management.notification.model.NotificationType;
 import com.kasa.estate_management.notification.repository.NotificationRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ public class NotificationOutboxService {
 
     private static final Duration LEASE = Duration.ofMinutes(5);
     private static final long[] RETRY_DELAY_MINUTES = {1, 5, 15, 60};
+    private static final String REDACTED = "[redacted after sending]";
 
     private final NotificationRepository notificationRepository;
     private final int maxAttempts;
@@ -53,6 +55,7 @@ public class NotificationOutboxService {
             n.setStatus(NotificationStatus.SENT);
             n.setSentAt(Instant.now());
             n.setLastError(null);
+            scrubIfSensitive(n);
         });
     }
 
@@ -63,11 +66,19 @@ public class NotificationOutboxService {
 
             if (n.getAttempts() >= maxAttempts) {
                 n.setStatus(NotificationStatus.FAILED);
+                scrubIfSensitive(n);
             } else {
                 int index = Math.min(n.getAttempts() - 1, RETRY_DELAY_MINUTES.length - 1);
                 n.setNextAttemptAt(Instant.now().plus(Duration.ofMinutes(RETRY_DELAY_MINUTES[index])));
             }
         });
+    }
+
+    /** Messages that carry a secret (a reset code) must not stay readable in the outbox. */
+    private void scrubIfSensitive(Notification n) {
+        if (n.getType() == NotificationType.PASSWORD_RESET) {
+            n.setBody(REDACTED);
+        }
     }
 
     private static String truncate(String text) {

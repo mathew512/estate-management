@@ -36,6 +36,7 @@ public class SecurityConfig {
                 // Public
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/password-reset/**").permitAll()
 
                 // Safaricom calls this without a JWT; the secret in the URL protects it
                 .requestMatchers(HttpMethod.POST, "/api/v1/payments/mpesa/callback/**").permitAll()
@@ -57,6 +58,10 @@ public class SecurityConfig {
 
                 // Tenant self-service: tenants only ever see their own data
                 .requestMatchers("/api/v1/me/**").hasRole("TENANT")
+
+                // Reports: management and finance staff
+                .requestMatchers("/api/v1/reports/**")
+                    .hasAnyRole("ADMIN", "PROPERTY_MANAGER", "ACCOUNTANT")
 
                 // Meter readings: field staff can record them
                 .requestMatchers(HttpMethod.POST, "/api/v1/meter-readings")
