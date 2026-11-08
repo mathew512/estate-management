@@ -1,5 +1,7 @@
 package com.kasa.estate_management.payment.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.billing.model.Invoice;
 import com.kasa.estate_management.billing.model.InvoiceStatus;
 import com.kasa.estate_management.billing.repository.InvoiceRepository;
@@ -30,15 +32,18 @@ public class PaymentService {
     private final InvoiceRepository invoiceRepository;
     private final MpesaClient mpesaClient;
     private final TenantNotifier tenantNotifier;
+    private final AuditService auditService;
 
     public PaymentService(PaymentRepository paymentRepository,
                           InvoiceRepository invoiceRepository,
                           MpesaClient mpesaClient,
-                          TenantNotifier tenantNotifier) {
+                          TenantNotifier tenantNotifier,
+                          AuditService auditService) {
         this.paymentRepository = paymentRepository;
         this.invoiceRepository = invoiceRepository;
         this.mpesaClient = mpesaClient;
         this.tenantNotifier = tenantNotifier;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -62,6 +67,13 @@ public class PaymentService {
             .build();
 
         Payment saved = paymentRepository.save(payment);
+
+        BigDecimal balance = invoice.getTotalAmount().subtract(invoice.getAmountPaid());
+        String ref = (reference == null || reference.isBlank()) ? "" : " (ref " + shorten(reference, 60) + ")";
+        auditService.record(AuditAction.PAYMENT_RECORDED, "INVOICE", invoice.getId(),
+            "Recorded " + method + " payment " + saved.getId() + " of " + amount.toPlainString() + ref
+                + "; invoice now " + invoice.getStatus() + ", balance " + balance.toPlainString());
+
         tenantNotifier.paymentReceived(saved, invoice);
         return saved;
     }
@@ -110,7 +122,13 @@ public class PaymentService {
             .checkoutRequestId(result.checkoutRequestId())
             .build();
 
-        return paymentRepository.save(payment);
+        Payment saved = paymentRepository.save(payment);
+
+        // The prompt is already on the customer's phone, so an audit problem must not fail the request.
+        auditService.recordBestEffort(AuditAction.MPESA_PROMPT_SENT, "INVOICE", invoice.getId(),
+            "Sent an M-Pesa prompt for payment " + saved.getId() + " of " + amount.toPlainString());
+
+        return saved;
     }
 
     /**
@@ -136,6 +154,10 @@ public class PaymentService {
             payment.setStatus(PaymentStatus.FAILED);
             payment.setResultDescription(truncate(resultDesc));
             paymentRepository.save(payment);
+
+            auditService.record(AuditAction.MPESA_PAYMENT_FAILED, "INVOICE", payment.getInvoice().getId(),
+                "M-Pesa payment " + payment.getId() + " failed (code " + resultCode + "): "
+                    + shorten(resultDesc, 200));
             return;
         }
 
@@ -171,9 +193,19 @@ public class PaymentService {
 
         Payment saved = paymentRepository.save(payment);
 
-        // Only confirm to the tenant when the money actually reached their invoice.
         if (applied) {
+            BigDecimal remaining = invoice.getTotalAmount().subtract(invoice.getAmountPaid());
+            auditService.record(AuditAction.MPESA_PAYMENT_CONFIRMED, "INVOICE", invoice.getId(),
+                "M-Pesa payment " + saved.getId() + " of " + saved.getAmount().toPlainString()
+                    + " confirmed (receipt " + receiptNumber + "); invoice now " + invoice.getStatus()
+                    + ", balance " + remaining.toPlainString());
+
+            // Only confirm to the tenant when the money actually reached their invoice.
             tenantNotifier.paymentReceived(saved, invoice);
+        } else {
+            auditService.record(AuditAction.MPESA_NEEDS_RECONCILIATION, "INVOICE", invoice.getId(),
+                "M-Pesa receipt " + receiptNumber + ": " + paidAmount + " received (requested "
+                    + payment.getAmount().toPlainString() + ") but not applied; needs manual reconciliation");
         }
     }
 
@@ -204,9 +236,13 @@ public class PaymentService {
     }
 
     private static String truncate(String text) {
+        return shorten(text, 250);
+    }
+
+    private static String shorten(String text, int max) {
         if (text == null) {
             return null;
         }
-        return text.length() > 250 ? text.substring(0, 250) : text;
+        return text.length() > max ? text.substring(0, max) : text;
     }
 }

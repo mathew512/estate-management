@@ -1,5 +1,7 @@
 package com.kasa.estate_management.billing.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.billing.model.Invoice;
 import com.kasa.estate_management.billing.model.InvoiceStatus;
 import com.kasa.estate_management.billing.repository.InvoiceRepository;
@@ -13,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,15 +26,18 @@ public class InvoiceService {
     private final LeaseRepository leaseRepository;
     private final MeterReadingRepository meterReadingRepository;
     private final TenantNotifier tenantNotifier;
+    private final AuditService auditService;
 
     public InvoiceService(InvoiceRepository invoiceRepository,
                           LeaseRepository leaseRepository,
                           MeterReadingRepository meterReadingRepository,
-                          TenantNotifier tenantNotifier) {
+                          TenantNotifier tenantNotifier,
+                          AuditService auditService) {
         this.invoiceRepository = invoiceRepository;
         this.leaseRepository = leaseRepository;
         this.meterReadingRepository = meterReadingRepository;
         this.tenantNotifier = tenantNotifier;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -64,6 +70,13 @@ public class InvoiceService {
             .build();
 
         Invoice saved = invoiceRepository.save(invoice);
+
+        auditService.record(AuditAction.INVOICE_CREATED, "INVOICE", saved.getId(),
+            "Created invoice for " + YearMonth.from(normalizedPeriod) + " on lease " + leaseId
+                + ": rent " + saved.getRentAmount().toPlainString()
+                + " + utilities " + utility.toPlainString()
+                + ", due " + saved.getDueDate());
+
         tenantNotifier.invoiceCreated(saved);
         return saved;
     }
@@ -105,7 +118,12 @@ public class InvoiceService {
 
         late.forEach(invoice -> invoice.setStatus(InvoiceStatus.OVERDUE));
         invoiceRepository.saveAll(late);
-        late.forEach(tenantNotifier::invoiceOverdue);
+
+        late.forEach(invoice -> {
+            tenantNotifier.invoiceOverdue(invoice);
+            auditService.record(AuditAction.INVOICE_MARKED_OVERDUE, "INVOICE", invoice.getId(),
+                "Marked overdue by the overdue sweep (due " + invoice.getDueDate() + ")");
+        });
 
         return late.size();
     }
@@ -115,7 +133,14 @@ public class InvoiceService {
         Invoice invoice = getById(invoiceId);
 
         invoice.setPenaltyAmount(invoice.getPenaltyAmount().add(penaltyAmount));
-        return invoiceRepository.save(invoice);
+        Invoice saved = invoiceRepository.save(invoice);
+
+        BigDecimal total = saved.getRentAmount().add(saved.getUtilityAmount()).add(saved.getPenaltyAmount());
+        auditService.record(AuditAction.INVOICE_PENALTY_APPLIED, "INVOICE", saved.getId(),
+            "Added a penalty of " + penaltyAmount.toPlainString() + "; penalties now "
+                + saved.getPenaltyAmount().toPlainString() + ", invoice total " + total.toPlainString());
+
+        return saved;
     }
 
     @Transactional
@@ -127,7 +152,11 @@ public class InvoiceService {
         }
 
         invoice.setStatus(InvoiceStatus.OVERDUE);
-        return invoiceRepository.save(invoice);
+        Invoice saved = invoiceRepository.save(invoice);
+
+        auditService.record(AuditAction.INVOICE_MARKED_OVERDUE, "INVOICE", saved.getId(),
+            "Marked overdue manually");
+        return saved;
     }
 
     public Invoice getById(UUID id) {
