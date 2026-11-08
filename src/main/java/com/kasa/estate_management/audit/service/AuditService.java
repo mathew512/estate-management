@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
 import java.sql.Timestamp;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -45,6 +44,12 @@ public class AuditService {
     public void record(AuditAction action, String entityType, UUID entityId, String summary) {
         Actor actor = currentActor();
         writer.write(actor.id(), actor.label(), actor.role(), action, entityType, entityId, summary);
+    }
+
+    /** Same, but for a named actor (for example a person using a public endpoint, where nobody is logged in yet). */
+    public void recordAs(String actorLabel, UUID actorId, String actorRole, AuditAction action,
+                         String entityType, UUID entityId, String summary) {
+        writer.write(actorId, actorLabel, actorRole, action, entityType, entityId, summary);
     }
 
     /** Own transaction, never throws. For events where an audit problem must not break the request. */

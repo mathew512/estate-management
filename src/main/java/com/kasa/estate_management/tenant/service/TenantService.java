@@ -1,5 +1,7 @@
 package com.kasa.estate_management.tenant.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.auth.model.Role;
 import com.kasa.estate_management.auth.model.User;
 import com.kasa.estate_management.auth.service.UserService;
@@ -15,10 +17,13 @@ public class TenantService {
 
     private final TenantRepository tenantRepository;
     private final UserService userService;
+    private final AuditService auditService;
 
-    public TenantService(TenantRepository tenantRepository, UserService userService) {
+    public TenantService(TenantRepository tenantRepository, UserService userService,
+                         AuditService auditService) {
         this.tenantRepository = tenantRepository;
         this.userService = userService;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -35,7 +40,10 @@ public class TenantService {
             .active(true)
             .build();
 
-        return tenantRepository.save(tenant);
+        Tenant saved = tenantRepository.save(tenant);
+        // Personal details are deliberately left out of the audit trail; the entry id points at the tenant.
+        auditService.record(AuditAction.TENANT_CREATED, "TENANT", saved.getId(), "Onboarded a new tenant");
+        return saved;
     }
 
     /** Creates a TENANT-role login for an existing tenant. The role is fixed; it cannot be chosen. */
@@ -51,7 +59,11 @@ public class TenantService {
             tenant.getFullName(), email, tenant.getPhoneNumber(), rawPassword, Role.TENANT);
 
         tenant.setUser(user);
-        return tenantRepository.save(tenant);
+        Tenant saved = tenantRepository.save(tenant);
+
+        auditService.record(AuditAction.TENANT_LOGIN_CREATED, "TENANT", saved.getId(),
+            "Created a login account (user " + user.getId() + ") for the tenant");
+        return saved;
     }
 
     public Tenant getById(UUID id) {

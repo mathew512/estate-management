@@ -1,5 +1,7 @@
 package com.kasa.estate_management.tenant.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.property.model.Unit;
 import com.kasa.estate_management.property.model.UnitStatus;
 import com.kasa.estate_management.property.repository.UnitRepository;
@@ -20,11 +22,14 @@ public class LeaseService {
     private final LeaseRepository leaseRepository;
     private final UnitRepository unitRepository;
     private final TenantService tenantService;
+    private final AuditService auditService;
 
-    public LeaseService(LeaseRepository leaseRepository, UnitRepository unitRepository, TenantService tenantService) {
+    public LeaseService(LeaseRepository leaseRepository, UnitRepository unitRepository,
+                        TenantService tenantService, AuditService auditService) {
         this.leaseRepository = leaseRepository;
         this.unitRepository = unitRepository;
         this.tenantService = tenantService;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -52,6 +57,11 @@ public class LeaseService {
         unit.setStatus(UnitStatus.OCCUPIED);
         unitRepository.save(unit);
 
+        auditService.record(AuditAction.LEASE_CREATED, "LEASE", savedLease.getId(),
+            "Created lease for unit " + unit.getUnitNumber() + " (tenant " + tenantId + "): rent "
+                + monthlyRent.toPlainString() + ", deposit " + depositAmount.toPlainString()
+                + ", starting " + startDate + "; unit set to OCCUPIED");
+
         return savedLease;
     }
 
@@ -71,6 +81,10 @@ public class LeaseService {
         Unit unit = lease.getUnit();
         unit.setStatus(UnitStatus.VACANT);
         unitRepository.save(unit);
+
+        auditService.record(AuditAction.LEASE_ENDED, "LEASE", savedLease.getId(),
+            "Ended lease for unit " + unit.getUnitNumber() + " on " + savedLease.getEndDate()
+                + "; unit set to VACANT");
 
         return savedLease;
     }

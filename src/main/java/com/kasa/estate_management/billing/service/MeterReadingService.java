@@ -1,5 +1,7 @@
 package com.kasa.estate_management.billing.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.billing.model.MeterReading;
 import com.kasa.estate_management.billing.repository.MeterReadingRepository;
 import com.kasa.estate_management.property.model.Unit;
@@ -16,10 +18,13 @@ public class MeterReadingService {
 
     private final MeterReadingRepository meterReadingRepository;
     private final UnitRepository unitRepository;
+    private final AuditService auditService;
 
-    public MeterReadingService(MeterReadingRepository meterReadingRepository, UnitRepository unitRepository) {
+    public MeterReadingService(MeterReadingRepository meterReadingRepository, UnitRepository unitRepository,
+                               AuditService auditService) {
         this.meterReadingRepository = meterReadingRepository;
         this.unitRepository = unitRepository;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -45,6 +50,16 @@ public class MeterReadingService {
             .ratePerUnit(ratePerUnit)
             .build();
 
-        return meterReadingRepository.save(reading);
+        MeterReading saved = meterReadingRepository.save(reading);
+
+        // Filed under the unit, so one query shows a unit's whole history.
+        auditService.record(AuditAction.METER_READING_RECORDED, "UNIT", unit.getId(),
+            "Recorded reading " + currentReading.toPlainString() + " (previous "
+                + previousReading.toPlainString() + ") at rate " + ratePerUnit.toPlainString()
+                + " for unit " + unit.getUnitNumber() + " dated " + readingDate
+                + (saved.getTotalCharge() != null ? "; charge " + saved.getTotalCharge().toPlainString() : "")
+                + " [reading " + saved.getId() + "]");
+
+        return saved;
     }
 }

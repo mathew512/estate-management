@@ -1,5 +1,7 @@
 package com.kasa.estate_management.maintenance.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.auth.model.Role;
 import com.kasa.estate_management.auth.model.User;
 import com.kasa.estate_management.auth.repository.UserRepository;
@@ -45,19 +47,22 @@ public class ComplaintService {
     private final TenantService tenantService;
     private final UserRepository userRepository;
     private final TenantNotifier tenantNotifier;
+    private final AuditService auditService;
 
     public ComplaintService(ComplaintRepository complaintRepository,
                             UnitRepository unitRepository,
                             LeaseRepository leaseRepository,
                             TenantService tenantService,
                             UserRepository userRepository,
-                            TenantNotifier tenantNotifier) {
+                            TenantNotifier tenantNotifier,
+                            AuditService auditService) {
         this.complaintRepository = complaintRepository;
         this.unitRepository = unitRepository;
         this.leaseRepository = leaseRepository;
         this.tenantService = tenantService;
         this.userRepository = userRepository;
         this.tenantNotifier = tenantNotifier;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -86,7 +91,14 @@ public class ComplaintService {
             .createdBy(createdBy)
             .build();
 
-        return complaintRepository.save(complaint);
+        Complaint saved = complaintRepository.save(complaint);
+
+        // The title and description are free text from the tenant, so they stay out of the audit trail.
+        auditService.record(AuditAction.COMPLAINT_CREATED, "COMPLAINT", saved.getId(),
+            "Logged a " + category + " complaint (priority " + saved.getPriority()
+                + ") for unit " + unit.getUnitNumber());
+
+        return saved;
     }
 
     /**
@@ -120,6 +132,10 @@ public class ComplaintService {
         }
 
         Complaint saved = complaintRepository.save(complaint);
+
+        auditService.record(AuditAction.COMPLAINT_ASSIGNED, "COMPLAINT", saved.getId(),
+            "Assigned to " + staff.getEmail() + (startsWork ? "; status moved to IN_PROGRESS" : ""));
+
         if (startsWork) {
             tenantNotifier.complaintUpdated(saved, ComplaintStatus.IN_PROGRESS);
         }
@@ -172,6 +188,10 @@ public class ComplaintService {
 
         complaint.setStatus(newStatus);
         Complaint saved = complaintRepository.save(complaint);
+
+        auditService.record(AuditAction.COMPLAINT_STATUS_CHANGED, "COMPLAINT", saved.getId(),
+            "Status changed from " + current + " to " + newStatus + (hasNotes ? " (notes provided)" : ""));
+
         tenantNotifier.complaintUpdated(saved, newStatus);
         return saved;
     }

@@ -1,5 +1,7 @@
 package com.kasa.estate_management.property.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.property.model.Property;
 import com.kasa.estate_management.property.model.Unit;
 import com.kasa.estate_management.property.model.UnitStatus;
@@ -16,10 +18,13 @@ public class UnitService {
 
     private final UnitRepository unitRepository;
     private final PropertyService propertyService;
+    private final AuditService auditService;
 
-    public UnitService(UnitRepository unitRepository, PropertyService propertyService) {
+    public UnitService(UnitRepository unitRepository, PropertyService propertyService,
+                       AuditService auditService) {
         this.unitRepository = unitRepository;
         this.propertyService = propertyService;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -39,7 +44,11 @@ public class UnitService {
             .status(UnitStatus.VACANT)
             .build();
 
-        return unitRepository.save(unit);
+        Unit saved = unitRepository.save(unit);
+        auditService.record(AuditAction.UNIT_CREATED, "UNIT", saved.getId(),
+            "Added unit " + unitNumber + " to property \"" + property.getName()
+                + "\" with base rent " + baseRent.toPlainString());
+        return saved;
     }
 
     public List<Unit> getByStatus(UnitStatus status) {
@@ -55,7 +64,14 @@ public class UnitService {
         Unit unit = unitRepository.findById(unitId)
             .orElseThrow(() -> new IllegalArgumentException("Unit not found: " + unitId));
 
+        UnitStatus previous = unit.getStatus();
         unit.setStatus(newStatus);
-        return unitRepository.save(unit);
+        Unit saved = unitRepository.save(unit);
+
+        if (previous != newStatus) {
+            auditService.record(AuditAction.UNIT_STATUS_CHANGED, "UNIT", saved.getId(),
+                "Unit " + saved.getUnitNumber() + " status changed from " + previous + " to " + newStatus);
+        }
+        return saved;
     }
 }

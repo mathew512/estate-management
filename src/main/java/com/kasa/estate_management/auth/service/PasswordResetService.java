@@ -1,5 +1,7 @@
 package com.kasa.estate_management.auth.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.auth.model.PasswordResetCode;
 import com.kasa.estate_management.auth.model.Role;
 import com.kasa.estate_management.auth.model.User;
@@ -34,6 +36,7 @@ public class PasswordResetService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final NotificationService notificationService;
+    private final AuditService auditService;
     private final String company;
 
     public PasswordResetService(PasswordResetCodeRepository codeRepository,
@@ -41,12 +44,14 @@ public class PasswordResetService {
                                 UserRepository userRepository,
                                 PasswordEncoder passwordEncoder,
                                 NotificationService notificationService,
+                                AuditService auditService,
                                 @Value("${app.company-name:Kasa Estate}") String company) {
         this.codeRepository = codeRepository;
         this.tenantRepository = tenantRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.notificationService = notificationService;
+        this.auditService = auditService;
         this.company = company;
     }
 
@@ -84,6 +89,10 @@ public class PasswordResetService {
         String message = "Your " + company + " password reset code is " + code
             + ". It expires in 10 minutes. Never share this code. - " + company;
         notificationService.queueSms("+" + msisdn, message, NotificationType.PASSWORD_RESET, null);
+
+        // Attributed to the account owner; neither the phone number nor the code is recorded.
+        auditService.recordAs(user.getEmail(), user.getId(), user.getRole().name(),
+            AuditAction.PASSWORD_RESET_REQUESTED, "USER", user.getId(), "Password reset code requested by SMS");
     }
 
     /**
@@ -118,6 +127,14 @@ public class PasswordResetService {
         reset.setAttempts(reset.getAttempts() + 1);
         if (!passwordEncoder.matches(code, reset.getCodeHash())) {
             codeRepository.save(reset);
+
+            // Only counted guesses are logged (at most five per code), so repeated attempts
+            // against a locked code cannot flood the audit trail.
+            int used = reset.getAttempts();
+            auditService.recordAs(user.getEmail(), user.getId(), user.getRole().name(),
+                AuditAction.PASSWORD_RESET_FAILED, "USER", user.getId(),
+                "Wrong password reset code (attempt " + used + " of " + MAX_ATTEMPTS + ")"
+                    + (used >= MAX_ATTEMPTS ? "; code now locked" : ""));
             return false;
         }
 
@@ -127,6 +144,9 @@ public class PasswordResetService {
         List<PasswordResetCode> open = codeRepository.findByUserIdAndUsedAtIsNull(user.getId());
         open.forEach(c -> c.setUsedAt(now));
         codeRepository.saveAll(open);
+
+        auditService.recordAs(user.getEmail(), user.getId(), user.getRole().name(),
+            AuditAction.PASSWORD_RESET_COMPLETED, "USER", user.getId(), "Password changed using an SMS code");
         return true;
     }
 

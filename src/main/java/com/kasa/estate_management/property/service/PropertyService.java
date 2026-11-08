@@ -1,5 +1,7 @@
 package com.kasa.estate_management.property.service;
 
+import com.kasa.estate_management.audit.model.AuditAction;
+import com.kasa.estate_management.audit.service.AuditService;
 import com.kasa.estate_management.property.model.Property;
 import com.kasa.estate_management.property.repository.PropertyRepository;
 import org.springframework.stereotype.Service;
@@ -12,9 +14,11 @@ import java.util.UUID;
 public class PropertyService {
 
     private final PropertyRepository propertyRepository;
+    private final AuditService auditService;
 
-    public PropertyService(PropertyRepository propertyRepository) {
+    public PropertyService(PropertyRepository propertyRepository, AuditService auditService) {
         this.propertyRepository = propertyRepository;
+        this.auditService = auditService;
     }
 
     @Transactional
@@ -24,7 +28,10 @@ public class PropertyService {
             .location(location)
             .build();
 
-        return propertyRepository.save(property);
+        Property saved = propertyRepository.save(property);
+        auditService.record(AuditAction.PROPERTY_CREATED, "PROPERTY", saved.getId(),
+            "Created property \"" + name + "\" in " + location);
+        return saved;
     }
 
     public Property getById(UUID id) {
