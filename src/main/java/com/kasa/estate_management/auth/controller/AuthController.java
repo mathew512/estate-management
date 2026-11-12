@@ -7,6 +7,8 @@ import com.kasa.estate_management.auth.dto.AuthDtos.UserResponse;
 import com.kasa.estate_management.auth.model.User;
 import com.kasa.estate_management.auth.service.JwtService;
 import com.kasa.estate_management.auth.service.UserService;
+import com.kasa.estate_management.security.RateLimitService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,10 +20,12 @@ public class AuthController {
 
     private final UserService userService;
     private final JwtService jwtService;
+    private final RateLimitService rateLimitService;
 
-    public AuthController(UserService userService, JwtService jwtService) {
+    public AuthController(UserService userService, JwtService jwtService, RateLimitService rateLimitService) {
         this.userService = userService;
         this.jwtService = jwtService;
+        this.rateLimitService = rateLimitService;
     }
 
     @PostMapping("/register")
@@ -38,10 +42,17 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        User user = userService.authenticate(request.email(), request.password());
-        String token = jwtService.generateToken(user.getEmail(), user.getRole().name());
+    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request,
+                                               HttpServletRequest httpRequest) {
+        String ip = httpRequest.getRemoteAddr();
 
+        // Counted before the password is checked, so a refused request costs the server almost nothing.
+        rateLimitService.beforeLogin(ip, request.email());
+
+        User user = userService.authenticate(request.email(), request.password());
+        rateLimitService.afterLoginSuccess(ip, request.email());
+
+        String token = jwtService.generateToken(user.getEmail(), user.getRole().name());
         return ResponseEntity.ok(new LoginResponse(token, "Bearer", toUserResponse(user)));
     }
 

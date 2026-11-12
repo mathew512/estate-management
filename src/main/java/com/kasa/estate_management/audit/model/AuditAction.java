@@ -3,6 +3,7 @@ package com.kasa.estate_management.audit.model;
 public enum AuditAction {
     LOGIN_SUCCESS,
     LOGIN_FAILED,
+    LOGIN_BLOCKED,
     USER_CREATED,
     TENANT_CREATED,
     TENANT_LOGIN_CREATED,
